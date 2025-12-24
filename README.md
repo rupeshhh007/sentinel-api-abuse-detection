@@ -41,8 +41,7 @@ Decision (LOG_ONLY / BLOCK)
 ↓
 Controller / Business Logic
 
-yaml
-Copy code
+
 
 Sentinel executes before controllers, ensuring abusive behavior is detected before reaching core application code.
 
@@ -67,8 +66,7 @@ Sentinel executes before controllers, ensuring abusive behavior is detected befo
 
 normalized IP + User-Agent + endpoint
 
-yaml
-Copy code
+
 
 - Stable across requests
 - Partially resistant to basic IP rotation
@@ -82,8 +80,7 @@ Copy code
 
 Map<Fingerprint, Deque<Long>>
 
-yaml
-Copy code
+
 
 - Detects burst traffic reliably
 - Avoids fixed-window boundary bypass
@@ -124,8 +121,7 @@ Example output:
 [SENTINEL][RISK] score=90
 reasons=[High request rate detected, Highly repetitive behavior detected]
 
-yaml
-Copy code
+
 
 ---
 
@@ -138,8 +134,7 @@ FP=4a033ca9e2b7
 [SENTINEL][RISK] score=90
 reasons=[High request rate detected, Highly repetitive behavior detected]
 
-yaml
-Copy code
+
 
 ---
 
@@ -169,8 +164,7 @@ Copy code
 
 mvn spring-boot:run
 
-yaml
-Copy code
+
 
 ---
 
@@ -180,8 +174,7 @@ Normal request:
 
 curl http://localhost:8080/ping
 
-yaml
-Copy code
+
 
 Simulated automated behavior:
 
@@ -189,8 +182,6 @@ for i in {1..50}; do
 curl -H "User-Agent: curl/8.7.1" http://localhost:8080/ping
 done
 
-yaml
-Copy code
 
 ---
 
@@ -198,8 +189,7 @@ Copy code
 
 LOG_ONLY
 
-yaml
-Copy code
+
 
 Requests are not blocked yet. The system currently logs detections to allow safe evaluation before enforcement.
 
