@@ -1,200 +1,225 @@
-🛡️ Sentinel — Intelligent API Abuse & Bot Detection Engine
+# Sentinel — Intelligent API Abuse & Bot Detection Engine
 
-Sentinel is a backend middleware system built with Spring Boot that detects API abuse, bots, and suspicious behavior patterns using algorithmic analysis, not CAPTCHAs or machine learning.
+Sentinel is a backend middleware system built using Spring Boot to detect API abuse, automated clients, and suspicious request patterns using deterministic, algorithmic techniques.
 
-It operates before business logic, observes request behavior, builds privacy-safe identities, and generates explainable risk scores — similar in spirit to how real-world trust systems (Cloudflare, Stripe, Google) are designed.What Sentinel Does (High Level)
+It operates before application business logic, observes request behavior, constructs privacy-safe client fingerprints, and computes explainable risk scores.
+
+---
+
+## Overview
 
 For every incoming HTTP request, Sentinel:
 
-Intercepts the request at infrastructure level
+- Intercepts traffic at the servlet filter level
+- Extracts behavioral signals (IP address, User-Agent, endpoint, timing)
+- Generates a stable fingerprint without authentication or cookies
+- Tracks request frequency using a sliding window algorithm
+- Analyzes behavioral entropy based on timing and endpoint repetition
+- Computes a multi-signal risk score
+- Produces structured, human-readable logs
+- Supports safe rollout using LOG_ONLY mode
 
-Extracts behavioral signals (IP, User-Agent, endpoint, timing)
+---
 
-Generates a stable fingerprint (no auth, no cookies)
+## Request Processing Pipeline
 
-Tracks request frequency using a sliding window algorithm
-
-Analyzes behavioral entropy (time gaps + endpoint repetition)
-
-Computes a multi-signal risk score
-
-Produces human-readable, explainable logs
-
-Allows safe rollout via LOG_ONLY mode
-
-🧩 System Architecture
 Client Request
-      ↓
-OncePerRequestFilter  (Sentinel)
-      ↓
+↓
+OncePerRequestFilter (Sentinel)
+↓
 Signal Extraction
-      ↓
+↓
 Fingerprinting Engine
-      ↓
-Rate Detection (Sliding Window)
-      ↓
-Entropy Analysis (Behavior Patterns)
-      ↓
+↓
+Sliding Window Rate Detection
+↓
+Behavioral Entropy Analysis
+↓
 Risk Scoring Engine
-      ↓
+↓
 Decision (LOG_ONLY / BLOCK)
-      ↓
+↓
 Controller / Business Logic
 
+yaml
+Copy code
 
-Sentinel runs before controllers, meaning abuse is detected before it reaches core APIs.
+Sentinel executes before controllers, ensuring abusive behavior is detected before reaching core application code.
 
-🔐 Core Concepts Implemented
-1️⃣ Infrastructure-Level Interception
+---
 
-Uses OncePerRequestFilter
+## Core Components
 
-Filters only real client requests (DispatcherType.REQUEST)
+### 1. Infrastructure-Level Interception
 
-No duplication across controllers
+- Implemented using `OncePerRequestFilter`
+- Executes once per HTTP request
+- Filters only `DispatcherType.REQUEST`
+- Prevents duplication across controllers
 
-2️⃣ Privacy-Safe Fingerprinting
+---
 
-No authentication required
+### 2. Privacy-Safe Fingerprinting
 
-No cookies or PII stored
-
-Fingerprint = SHA-256 hash of:
+- No authentication required
+- No cookies or personally identifiable information stored
+- Fingerprint generated as a SHA-256 hash of:
 
 normalized IP + User-Agent + endpoint
 
+yaml
+Copy code
 
-Stable across requests
+- Stable across requests
+- Partially resistant to basic IP rotation
 
-Resistant to IP rotation
+---
 
-3️⃣ Sliding Window Rate Detection (DSA-based)
+### 3. Sliding Window Rate Detection
 
-Tracks request timestamps per fingerprint
+- Tracks request timestamps per fingerprint
+- Data structure used:
 
-Uses:
+Map<Fingerprint, Deque<Long>>
 
-Map<Fingerprint, Deque<Timestamps>>
+yaml
+Copy code
 
+- Detects burst traffic reliably
+- Avoids fixed-window boundary bypass
+- Uses thread-safe concurrent collections
 
-Detects bursts reliably (no fixed-window bypass)
+---
 
-Thread-safe design
+### 4. Behavioral Entropy Analysis
 
-4️⃣ Behavioral Entropy Analysis (Advanced)
+Sentinel evaluates how predictable a client’s behavior is.
 
-Sentinel detects how predictable a client is:
-
-Time-gap entropy → bots send requests at fixed intervals
-
-Endpoint-sequence entropy → bots repeat same endpoint
+Signals analyzed:
+- Time-gap entropy (fixed or near-fixed request intervals)
+- Endpoint sequence entropy (repeated access to the same endpoint)
 
 Entropy levels:
+- LOW
+- MEDIUM
+- HIGH
+- UNKNOWN
 
-LOW / MEDIUM / HIGH / UNKNOWN
+Automated clients tend to converge toward LOW entropy even when rate-limited.
 
+---
 
-Bots tend to converge to LOW entropy even when rate-limited.
+### 5. Risk Scoring Engine
 
-5️⃣ Multi-Signal Risk Scoring (Explainable)
+Rather than hard blocking rules, Sentinel uses weighted scoring.
 
-Instead of hard rules, Sentinel uses weighted scoring:
-
-Signal	Score
-Rate abuse detected	+40
-LOW entropy	+50
-MEDIUM entropy	+20
+| Signal Detected     | Score |
+|---------------------|-------|
+| Rate abuse detected | +40   |
+| LOW entropy         | +50   |
+| MEDIUM entropy      | +20   |
 
 Example output:
 
 [SENTINEL][RISK] score=90
 reasons=[High request rate detected, Highly repetitive behavior detected]
 
+yaml
+Copy code
 
-This makes Sentinel:
+---
 
-Transparent
+## Example Logs
 
-Debuggable
-
-Interview-friendly
-
-🧪 Example Logs
 IP=127.0.0.1 | UA=curl/8.7.1 | URI=/ping
-FP=4a033ca9e2b7 | IP=127.0.0.1 | URI=/ping
+FP=4a033ca9e2b7
 [SENTINEL][ENTROPY] Low entropy detected
 [SENTINEL][RATE] Suspicious activity detected
 [SENTINEL][RISK] score=90
 reasons=[High request rate detected, Highly repetitive behavior detected]
 
-🧠 Design Principles
+yaml
+Copy code
 
-Defense in depth (multiple weak signals → strong decision)
+---
 
-Explainability over black boxes
+## Design Principles
 
-Safe rollout first (LOG_ONLY)
+- Defense in depth using multiple weak signals
+- Explainability over opaque decision-making
+- Safe rollout via observation-first deployment
+- Algorithmic approaches over heuristics
+- Production-inspired system boundaries
 
-Algorithmic > heuristic
+---
 
-Production-inspired architecture
+## Technology Stack
 
-⚙️ Tech Stack
+- Java 17
+- Spring Boot
+- Servlet Filters
+- Maven
+- Concurrent data structures
+- No machine learning
+- No external security dependencies
 
-Java 17
+---
 
-Spring Boot
+## Running the Application
 
-Servlet Filters
+mvn spring-boot:run
 
-Maven
+yaml
+Copy code
 
-Concurrent data structures
+---
 
-No ML, no external dependencies
-
-🧪 Testing Sentinel (curl)
+## Testing
 
 Normal request:
 
 curl http://localhost:8080/ping
 
+yaml
+Copy code
 
-Bot-like behavior:
+Simulated automated behavior:
 
 for i in {1..50}; do
-  curl -H "User-Agent: curl/8.7.1" http://localhost:8080/ping
+curl -H "User-Agent: curl/8.7.1" http://localhost:8080/ping
 done
 
-🚧 Current Mode
+yaml
+Copy code
+
+---
+
+## Current Mode
+
 LOG_ONLY
 
+yaml
+Copy code
 
-No requests are blocked yet.
-This mirrors how real production security systems are deployed initially.
+Requests are not blocked yet. The system currently logs detections to allow safe evaluation before enforcement.
 
-🔮 Possible Extensions
+---
 
-Switch to BLOCK mode
+## Possible Extensions
 
-Redis-backed distributed rate limiting
+- Enable BLOCK mode
+- Redis-backed distributed rate limiting
+- Endpoint normalization
+- Administrative dashboard
+- Spring Security integration
+- Per-endpoint risk policies
 
-Endpoint normalization
+---
 
-Admin dashboard
+## What This Project Demonstrates
 
-Integration with Spring Security
-
-Per-endpoint risk policies
-
-💼 What This Project Demonstrates
-
-Backend systems thinking
-
-Algorithmic problem solving
-
-Concurrency awareness
-
-Security-first design
-
-Real-world engineering tradeoffs
+- Backend systems design
+- Algorithmic problem solving
+- Concurrency handling
+- Security-oriented thinking
+- Real-world engineering tradeoffs
