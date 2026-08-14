@@ -10,7 +10,7 @@ public class EntropyService {
 
     private static final int MAX_EVENTS = 20;
 
-    private final Map<String, Deque<Long>> timeMap = new ConcurrentHashMap<>();
+    private final Map<String, Deque<Long>> timeMap = new ConcurrentHashMap<>(); //ConcurrentHashMap is used to make the map thread safe, but the ArrayDeque is not thread safe, so we need to synchronize on it when we access it.
     private final Map<String, Deque<String>> endpointMap = new ConcurrentHashMap<>();
 
     public EntropyLevel recordAndEvaluate(String fingerprint, long timestamp, String endpoint) {
@@ -20,7 +20,7 @@ public class EntropyService {
         Deque<String> endpoints =
                 endpointMap.computeIfAbsent(fingerprint, k -> new ArrayDeque<>());
 
-        synchronized (times) {
+        synchronized (times) { //synchronized(times) makes the ArrayDeque also thread safe..
             times.addLast(timestamp);
             if (times.size() > MAX_EVENTS) times.removeFirst();
         }
