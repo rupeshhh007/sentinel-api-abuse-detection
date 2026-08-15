@@ -36,6 +36,6 @@ public class RateLimitService {
         // Set key TTL to keep Redis memory clean
         redisTemplate.expire(key, Duration.ofSeconds(WINDOW_SECONDS));
 
-        return count != null && count > MAX_REQUESTS;
+        return count != null && count > MAX_REQUESTS; //finally return true if the count exceeds the max requests allowed
     }
 }
