@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   redis:
     image: redis:7-alpine
@@ -7,9 +5,6 @@ services:
     ports:
       - "6379:6379"
     restart: unless-stopped
-    # Optional: Add this if you want Redis data to survive container restarts
-    # volumes:
-    #   - redis-data:/data
 
   app:
     build: .
@@ -19,11 +14,28 @@ services:
     depends_on:
       - redis
     environment:
-      # Spring Boot automatically converts this to spring.data.redis.host
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PORT=6379
     restart: unless-stopped
 
-# Optional: Enable this if you uncommented the redis volumes above
-# volumes:
-#   - redis-data:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: sentinel-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: sentinel-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+    restart: unless-stopped
