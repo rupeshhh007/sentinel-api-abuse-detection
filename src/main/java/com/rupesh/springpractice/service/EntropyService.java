@@ -30,6 +30,7 @@ public class EntropyService {
         this.entropyScript = new DefaultRedisScript<>(luaScript, List.class);
     }
 
+    @SuppressWarnings("unchecked")
     public EntropyLevel recordAndEvaluate(String fingerprint, long timestamp, String endpoint) {
         String key = "entropy:" + fingerprint;
         // Combine timestamp and endpoint into a single payload

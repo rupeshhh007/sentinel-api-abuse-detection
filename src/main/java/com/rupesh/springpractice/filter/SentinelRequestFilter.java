@@ -46,7 +46,7 @@ public class SentinelRequestFilter extends OncePerRequestFilter {
         String userAgent = request.getHeader("User-Agent");
         String uri = request.getRequestURI();
 
-        String fingerprint = fingerprintService.generate(ip, userAgent, uri);
+        String fingerprint = fingerprintService.generate(request, ip);
         String shortFp = fingerprint.substring(0, 12);
 
         log.debug("Processing request | FP={} | IP={} | URI={}", shortFp, ip, uri);

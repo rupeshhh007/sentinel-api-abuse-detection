@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: sentinel-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    # Optional: Add this if you want Redis data to survive container restarts
+    # volumes:
+    #   - redis-data:/data
+
+  app:
+    build: .
+    container_name: sentinel-app
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+    environment:
+      # Spring Boot automatically converts this to spring.data.redis.host
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+    restart: unless-stopped
+
+# Optional: Enable this if you uncommented the redis volumes above
+# volumes:
+#   - redis-data:
