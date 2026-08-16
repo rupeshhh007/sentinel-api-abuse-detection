@@ -1,5 +1,6 @@
 package com.rupesh.springpractice.service;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -9,9 +10,31 @@ import java.security.NoSuchAlgorithmException;
 @Service
 public class FingerprintService {
 
-    public String generate(String ip, String userAgent, String uri) {
-        String raw = ip + "|" + userAgent + "|" + uri;
+    public String generate(HttpServletRequest request, String normalizedIp) {
+        // Extract standard headers
+        String userAgent = getOrDefault(request.getHeader("User-Agent"));
+        String acceptLang = getOrDefault(request.getHeader("Accept-Language"));
+        String acceptEnc = getOrDefault(request.getHeader("Accept-Encoding"));
+
+        // Extract modern browser client hints (bots rarely send these)
+        String secChUa = getOrDefault(request.getHeader("Sec-CH-UA"));
+        String secChUaPlatform = getOrDefault(request.getHeader("Sec-CH-UA-Platform"));
+
+        // Notice we do NOT include the URI here.
+        // We are fingerprinting the client's machine, not their action.
+        String raw = normalizedIp + "|"
+                + userAgent + "|"
+                + acceptLang + "|"
+                + acceptEnc + "|"
+                + secChUa + "|"
+                + secChUaPlatform;
+
         return sha256(raw);
+    }
+
+    // Helper method to ensure null headers don't break our string concatenation
+    private String getOrDefault(String value) {
+        return (value != null && !value.isEmpty()) ? value : "NONE";
     }
 
     private String sha256(String input) {
