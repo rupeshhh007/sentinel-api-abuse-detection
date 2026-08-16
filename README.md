@@ -1,215 +1,53 @@
-# Sentinel — Intelligent API Abuse & Bot Detection Engine
+# 🛡️ Sentinel — Enterprise API Abuse & Bot Detection Engine
 
-Sentinel is a backend middleware system built using Spring Boot to detect API abuse, automated clients, and suspicious request patterns using deterministic, algorithmic techniques.
+Sentinel is a high-performance, distributed backend middleware system built with **Spring Boot** and **Redis**. It detects API abuse, automated clients, and suspicious request patterns using deterministic, algorithmic techniques.
 
-It operates before application business logic, observes request behavior, constructs privacy-safe client fingerprints, and computes explainable risk scores.
-
----
-
-## Overview
-
-For every incoming HTTP request, Sentinel:
-
-- Intercepts traffic at the servlet filter level
-- Extracts behavioral signals (IP address, User-Agent, endpoint, timing)
-- Generates a stable fingerprint without authentication or cookies
-- Tracks request frequency using a sliding window algorithm
-- Analyzes behavioral entropy based on timing and endpoint repetition
-- Computes a multi-signal risk score
-- Produces structured, human-readable logs
-- Supports safe rollout using LOG_ONLY mode
+Operating at the servlet filter level, Sentinel intercepts traffic before it reaches your core business logic. It constructs privacy-safe client fingerprints, calculates behavioral entropy, and leverages **Atomic Redis Lua Scripts** to evaluate risk and block malicious requests in real-time without introducing network latency.
 
 ---
 
-## Request Processing Pipeline
+## 🚀 The Request Pipeline
 
-Client Request
-↓
-OncePerRequestFilter (Sentinel)
-↓
-Signal Extraction
-↓
-Fingerprinting Engine
-↓
-Sliding Window Rate Detection
-↓
-Behavioral Entropy Analysis
-↓
-Risk Scoring Engine
-↓
-Decision (LOG_ONLY / BLOCK)
-↓
-Controller / Business Logic
-
-
-
-Sentinel executes before controllers, ensuring abusive behavior is detected before reaching core application code.
+1. **Intercept** → `OncePerRequestFilter` catches traffic before the Controller.
+2. **Fingerprint** → Generates a deterministic device ID using passive HTTP headers.
+3. **Sliding Window** → Redis Lua script counts requests atomically.
+4. **Entropy Analysis** → Evaluates robotic timing and repetitive endpoints.
+5. **Risk Engine** → Computes a multi-signal score.
+6. **Action** → Blocks threats (`429 Too Many Requests`) or allows traffic.
 
 ---
 
-## Core Components
+## 🧠 Core Engineering Achievements
 
-### 1. Infrastructure-Level Interception
+### 1. Atomic Rate Limiting (Redis + Lua)
+Traditional rate limiters suffer from read-modify-write race conditions under heavy concurrent load. Sentinel solves this by shifting the Sliding Window algorithm into a **single Redis Lua script**. Because Redis is single-threaded, the script executes atomically, making it mathematically impossible for attackers to bypass the limit via concurrent flooding.
 
-- Implemented using `OncePerRequestFilter`
-- Executes once per HTTP request
-- Filters only `DispatcherType.REQUEST`
-- Prevents duplication across controllers
+### 2. Behavioral Entropy Optimization (Solving N+1 Latency)
+To detect bots, Sentinel tracks the time-gaps between requests. Instead of making 8 separate network round-trips to Redis to manage lists and TTLs, Sentinel consolidates the payload (`timestamp::endpoint`) and executes the push, trim, and fetch operations inside a **pipelined Lua script**, reducing network latency to a single round-trip.
 
----
+### 3. Smart, Cross-Endpoint Fingerprinting
+Simple bots easily spoof `User-Agent` strings. Sentinel combats this by hashing a combination of passive headers (`Accept-Language`, `Accept-Encoding`) and modern Client Hints (`Sec-CH-UA`). Furthermore, the request URI is deliberately *excluded* from the fingerprint, preventing attackers from bypassing limits by rotating their attacks across different endpoints.
 
-### 2. Privacy-Safe Fingerprinting
-
-- No authentication required
-- No cookies or personally identifiable information stored
-- Fingerprint generated as a SHA-256 hash of:
-
-normalized IP + User-Agent + endpoint
-
-
-
-- Stable across requests
-- Partially resistant to basic IP rotation
+### 4. Integration Testing with Testcontainers
+Sentinel's Redis logic is fully covered by automated integration tests using **Testcontainers**. During `mvn test`, a real Redis Docker container is spun up dynamically to verify the Lua scripts against an actual database, guaranteeing production reliability.
 
 ---
 
-### 3. Sliding Window Rate Detection
+## 🛠️ Technology Stack
 
-- Tracks request timestamps per fingerprint
-- Data structure used:
-
-Map<Fingerprint, Deque<Long>>
-
-
-
-- Detects burst traffic reliably
-- Avoids fixed-window boundary bypass
-- Uses thread-safe concurrent collections
+* **Language:** Java 17
+* **Framework:** Spring Boot 3.4
+* **Data Store:** Redis (via Spring Data Redis)
+* **Performance:** Lua Scripting (Atomic Operations)
+* **Testing:** JUnit 5, Testcontainers
+* **Deployment:** Docker & Docker Compose
 
 ---
 
-### 4. Behavioral Entropy Analysis
+## 🚦 Getting Started
 
-Sentinel evaluates how predictable a client’s behavior is.
+Sentinel is fully containerized. You do not need to install Redis or Java on your local machine to run it.
 
-Signals analyzed:
-- Time-gap entropy (fixed or near-fixed request intervals)
-- Endpoint sequence entropy (repeated access to the same endpoint)
-
-Entropy levels:
-- LOW
-- MEDIUM
-- HIGH
-- UNKNOWN
-
-Automated clients tend to converge toward LOW entropy even when rate-limited.
-
----
-
-### 5. Risk Scoring Engine
-
-Rather than hard blocking rules, Sentinel uses weighted scoring.
-
-| Signal Detected     | Score |
-|---------------------|-------|
-| Rate abuse detected | +40   |
-| LOW entropy         | +50   |
-| MEDIUM entropy      | +20   |
-
-Example output:
-
-[SENTINEL][RISK] score=90
-reasons=[High request rate detected, Highly repetitive behavior detected]
-
-
-
----
-
-## Example Logs
-
-IP=127.0.0.1 | UA=curl/8.7.1 | URI=/ping
-FP=4a033ca9e2b7
-[SENTINEL][ENTROPY] Low entropy detected
-[SENTINEL][RATE] Suspicious activity detected
-[SENTINEL][RISK] score=90
-reasons=[High request rate detected, Highly repetitive behavior detected]
-
-
-
----
-
-## Design Principles
-
-- Defense in depth using multiple weak signals
-- Explainability over opaque decision-making
-- Safe rollout via observation-first deployment
-- Algorithmic approaches over heuristics
-- Production-inspired system boundaries
-
----
-
-## Technology Stack
-
-- Java 17
-- Spring Boot
-- Servlet Filters
-- Maven
-- Concurrent data structures
-- No machine learning
-- No external security dependencies
-
----
-
-## Running the Application
-
-mvn spring-boot:run
-
-
-
----
-
-## Testing
-
-Normal request:
-
-curl http://localhost:8080/ping
-
-
-
-Simulated automated behavior:
-
-for i in {1..50}; do
-curl -H "User-Agent: curl/8.7.1" http://localhost:8080/ping
-done
-
-
----
-
-## Current Mode
-
-LOG_ONLY
-
-
-
-Requests are not blocked yet. The system currently logs detections to allow safe evaluation before enforcement.
-
----
-
-## Possible Extensions
-
-- Enable BLOCK mode
-- Redis-backed distributed rate limiting
-- Endpoint normalization
-- Administrative dashboard
-- Spring Security integration
-- Per-endpoint risk policies
-
----
-
-## What This Project Demonstrates
-
-- Backend systems design
-- Algorithmic problem solving
-- Concurrency handling
-- Security-oriented thinking
-- Real-world engineering tradeoffs
+### 1. Spin up the environment
+```bash
+docker-compose up --build
