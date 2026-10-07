@@ -43,3 +43,10 @@ target/
 
 # OS
 .DS_Store
+# Frontend and local operator credentials
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+.env
+frontend/test-results/
+frontend/playwright-report/

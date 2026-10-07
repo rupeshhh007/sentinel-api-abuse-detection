@@ -11,8 +11,8 @@
 	<groupId>com.rupesh</groupId>
 	<artifactId>springpractice</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>springpractice</name>
-	<description>Demo project for Spring Boot</description>
+	<name>Sentinel API Security Workbench</name>
+	<description>Explainable API abuse detection with atomic Redis enforcement and an operator console</description>
 	<url/>
 	<licenses>
 		<license/>
@@ -94,6 +94,10 @@
 	</dependencies>
 
 	<build>
+        <resources>
+            <resource><directory>src/main/resources</directory></resource>
+            <resource><directory>frontend/dist</directory><targetPath>static</targetPath></resource>
+        </resources>
 		<plugins>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>

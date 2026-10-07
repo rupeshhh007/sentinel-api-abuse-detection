@@ -1,116 +1,51 @@
 package com.rupesh.springpractice.filter;
 
-import com.rupesh.springpractice.service.*;
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
-import jakarta.servlet.DispatcherType;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
+import com.rupesh.springpractice.service.FingerprintService;
+import com.rupesh.springpractice.detection.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.*;
+import jakarta.servlet.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.*;
 
-@Slf4j
 @Component
 public class SentinelRequestFilter extends OncePerRequestFilter {
-
-    private final FingerprintService fingerprintService;
-    private final RateLimitService rateLimitService;
-    private final EntropyService entropyService;
-    private final RiskScoreService riskScoreService;
-
-    @Value("${sentinel.risk.threshold:60}")
-    private int riskThreshold;
-
-    private final Counter requestsEvaluated;
-    private final Counter requestsBlocked;
-    private final Counter redisFailures;
-
-    public SentinelRequestFilter(
-            FingerprintService fingerprintService,
-            RateLimitService rateLimitService,
-            EntropyService entropyService,
-            RiskScoreService riskScoreService,
-            MeterRegistry meterRegistry
-    ) {
-        this.fingerprintService = fingerprintService;
-        this.rateLimitService = rateLimitService;
-        this.entropyService = entropyService;
-        this.riskScoreService = riskScoreService;
-
-        this.requestsEvaluated = meterRegistry.counter("sentinel.requests.evaluated");
-        this.requestsBlocked = meterRegistry.counter("sentinel.requests.blocked");
-        this.redisFailures = meterRegistry.counter("sentinel.redis.failures");
+    private final FingerprintService fingerprints;
+    private final DecisionService decisions;
+    private final PolicyService policies;
+    private final ObjectMapper json;
+    public SentinelRequestFilter(FingerprintService fingerprints,DecisionService decisions,PolicyService policies,ObjectMapper json) {
+        this.fingerprints=fingerprints;this.decisions=decisions;this.policies=policies;this.json=json;
     }
-
-    @Override
-    protected void doFilterInternal(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain
-    ) throws ServletException, IOException {
-
-        String ip = normalizeIp(getClientIp(request));
-        String fingerprint = fingerprintService.generate(request, ip);
-        String shortFp = fingerprint.substring(0, 12);
-        long now = System.currentTimeMillis() / 1000;
-
-        requestsEvaluated.increment();
-
-        try {
-            // 1. Evaluate Entropy
-            EntropyLevel entropy = entropyService.recordAndEvaluate(fingerprint, now, request.getRequestURI());
-
-            // 2. Evaluate Rate Limit
-            boolean suspicious = rateLimitService.isSuspicious(fingerprint);
-
-            // 3. Calculate Risk
-            RiskResult risk = riskScoreService.evaluate(suspicious, entropy);
-
-            // 4. Block if over threshold
-            if (risk.getScore() >= riskThreshold) {
-                log.warn("[SENTINEL][BLOCK] score={} FP={} reasons={}", risk.getScore(), shortFp, risk.getReasons());
-                requestsBlocked.increment();
-
-                response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
-                response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-                response.getWriter().write(String.format("{\"error\": \"Security constraint violation\", \"risk_score\": %d}", risk.getScore()));
-                return;
-            }
-        } catch (Exception e) {
-            // FAIL-OPEN: Log error, increment metric, and allow request through
-            log.error("[SENTINEL][ERROR] Redis/Service failure evaluating FP={}. Failing open to preserve availability.", shortFp, e);
-            redisFailures.increment();
+    @Override protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path=request.getRequestURI();
+        return request.getDispatcherType()!=DispatcherType.REQUEST || !(path.startsWith("/api/protected/") || path.equals("/ping"));
+    }
+    @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain) throws IOException,ServletException {
+        // The socket peer is authoritative. Do not trust client-supplied X-Forwarded-For.
+        String ip=request.getRemoteAddr();
+        if("::1".equals(ip)||"0:0:0:0:0:0:0:1".equals(ip)) ip="127.0.0.1";
+        String source;
+        try { source=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(ip.getBytes(StandardCharsets.UTF_8))); }
+        catch(java.security.NoSuchAlgorithmException e) {throw new IllegalStateException(e);}
+        String route=request.getRequestURI().replaceAll("/[0-9]+(?=/|$)","/:id");
+        if(route.length()>200) route=route.substring(0,200);
+        var d=decisions.evaluate(fingerprints.generate(request,ip),source,route,request.getMethod());
+        response.setHeader("X-Sentinel-Decision",d.id());
+        response.setHeader("X-Sentinel-Action",d.action());
+        response.setHeader("X-Sentinel-Score",String.valueOf(d.score()));
+        if(d.action().equals("BLOCK")||d.action().equals("UNAVAILABLE")) {
+            response.setStatus(d.action().equals("BLOCK")?429:503);
+            response.setContentType("application/json");
+            response.setHeader("Retry-After",String.valueOf(policies.get().windowSeconds()));
+            json.writeValue(response.getWriter(),Map.of("error",d.action().equals("BLOCK")?"Security constraint violation":"Detection unavailable",
+                "risk_score",d.score(),"decision_id",d.id(),"action",d.action()));
+            return;
         }
-
-        filterChain.doFilter(request, response);
-    }
-
-    @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) {
-        return request.getDispatcherType() != DispatcherType.REQUEST;
-    }
-
-    private String getClientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isEmpty()) {
-            return xff.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
-    }
-
-    private String normalizeIp(String ip) {
-        if (ip == null) return "unknown";
-        if ("0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip)) {
-            return "127.0.0.1";
-        }
-        return ip;
+        chain.doFilter(request,response);
     }
 }

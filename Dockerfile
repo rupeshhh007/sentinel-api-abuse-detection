@@ -1,23 +1,21 @@
-# Stage 1: Build the application
-FROM maven:3.9.6-amazoncorretto-17 AS builder
+FROM node:22-alpine AS frontend
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY frontend/ ./
+RUN npm run build
+
+FROM maven:3.9.11-amazoncorretto-17 AS backend
 WORKDIR /app
-
-# Copy the pom.xml and source code
-COPY pom.xml .
+COPY pom.xml ./
 COPY src ./src
+COPY --from=frontend /app/frontend/dist ./frontend/dist
+RUN --mount=type=cache,target=/root/.m2 mvn -B package -DskipTests
 
-# Build the application
-RUN mvn clean package -DskipTests
-
-# Stage 2: Run the application
 FROM amazoncorretto:17-alpine
 WORKDIR /app
-
-# Copy only the built JAR from the builder stage
-COPY --from=builder /app/target/*.jar app.jar
-
-# Expose the standard Spring Boot port
+RUN addgroup -S sentinel && adduser -S sentinel -G sentinel
+COPY --from=backend /app/target/*.jar app.jar
+USER sentinel
 EXPOSE 8080
-
-# Start the application
 ENTRYPOINT ["java", "-jar", "app.jar"]

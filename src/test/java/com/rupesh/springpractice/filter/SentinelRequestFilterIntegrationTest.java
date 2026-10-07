@@ -7,6 +7,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @AutoConfigureMockMvc
@@ -35,6 +36,8 @@ class SentinelRequestFilterIntegrationTest extends AbstractRedisIntegrationTest 
                         .header("X-Forwarded-For", testIp))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error").value("Security constraint violation"))
-                .andExpect(jsonPath("$.risk_score").value(90));
+                .andExpect(jsonPath("$.risk_score").value(allOf(greaterThanOrEqualTo(60), lessThanOrEqualTo(100))))
+                .andExpect(header().string("X-Sentinel-Action", "BLOCK"))
+                .andExpect(header().string("Retry-After", "60"));
     }
 }
